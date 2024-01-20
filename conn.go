@@ -288,7 +288,8 @@ type Conn struct {
 	newDecompressionReader func(io.Reader) io.ReadCloser
 }
 
-func newConn(conn net.Conn, isServer bool, readBufferSize, writeBufferSize int, writeBufferPool BufferPool, br *bufio.Reader, writeBuf []byte) *Conn {
+// NewConn initializes a Conn
+func NewConn(conn net.Conn, isServer bool, readBufferSize, writeBufferSize int, writeBufferPool BufferPool, br *bufio.Reader, writeBuf []byte) *Conn {
 
 	if br == nil {
 		if readBufferSize == 0 {

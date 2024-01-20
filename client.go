@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-
 	"net"
 	"net/http"
 	"net/http/httptrace"
@@ -228,7 +227,7 @@ func (d *Dialer) DialContext(ctx context.Context, urlStr string, requestHeader h
 			k == "Connection" ||
 			k == "Sec-Websocket-Key" ||
 			k == "Sec-Websocket-Version" ||
-			//#nosec G101 (CWE-798): Potential HTTP request smuggling via parameter pollution
+			// #nosec G101 (CWE-798): Potential HTTP request smuggling via parameter pollution
 			k == "Sec-Websocket-Extensions" ||
 			(k == "Sec-Websocket-Protocol" && len(d.Subprotocols) > 0):
 			return nil, nil, errors.New("websocket: duplicate header not allowed: " + k)
@@ -365,7 +364,7 @@ func (d *Dialer) DialContext(ctx context.Context, urlStr string, requestHeader h
 		}
 	}
 
-	conn := newConn(netConn, false, d.ReadBufferSize, d.WriteBufferSize, d.WriteBufferPool, nil, nil)
+	conn := NewConn(netConn, false, d.ReadBufferSize, d.WriteBufferSize, d.WriteBufferPool, nil, nil)
 
 	if err := req.Write(netConn); err != nil {
 		return nil, nil, err
