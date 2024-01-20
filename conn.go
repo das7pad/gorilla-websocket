@@ -765,6 +765,88 @@ func (c *Conn) WritePreparedMessage(pm *PreparedMessage) error {
 	return err
 }
 
+// WritePreparedMessageBulk writes a batch of prepared messages into connection.
+func (c *Conn) WritePreparedMessageBulk(batch []*PreparedMessage) error {
+	if len(batch) == 1 {
+		return c.WritePreparedMessage(batch[0])
+	}
+	if c.isWriting {
+		panic("concurrent write to websocket connection")
+	}
+	c.isWriting = true
+	defer func() {
+		if !c.isWriting {
+			panic("concurrent write to websocket connection")
+		}
+		c.isWriting = false
+	}()
+
+	if c.writeBuf == nil {
+		if wpd, ok := c.writePool.Get().(writePoolData); ok {
+			c.writeBuf = wpd.buf
+		} else {
+			c.writeBuf = make([]byte, c.writeBufSize)
+		}
+	}
+	defer func() {
+		if c.writePool != nil {
+			c.writePool.Put(writePoolData{buf: c.writeBuf})
+			c.writeBuf = nil
+		}
+	}()
+
+	<-c.mu
+	defer func() { c.mu <- struct{}{} }()
+	{
+		c.writeErrMu.Lock()
+		err := c.writeErr
+		c.writeErrMu.Unlock()
+		if err != nil {
+			return err
+		}
+	}
+
+	if err := c.conn.SetWriteDeadline(c.writeDeadline); err != nil {
+		return c.writeFatal(err)
+	}
+	buf := c.writeBuf[:0]
+	for i, pm := range batch {
+		frameType, frameData, err := pm.frame(prepareKey{
+			isServer:         c.isServer,
+			compress:         c.newCompressionWriter != nil && c.enableWriteCompression && isData(pm.messageType),
+			compressionLevel: c.compressionLevel,
+		})
+		if err != nil {
+			return err
+		}
+		n := cap(buf) - len(buf)
+		if len(frameData) < n {
+			n = len(frameData)
+		}
+		buf = append(buf, frameData[:n]...)
+		frameData = frameData[n:]
+		isLast := i == len(batch)-1
+		isClose := frameType == CloseMessage
+		if len(frameData) > cap(buf) || ((isLast || isClose) && len(frameData) > 0) {
+			err = c.writeBufs(buf, frameData)
+			buf = buf[:0]
+		} else {
+			_, err = c.conn.Write(buf)
+			buf = append(buf[:0], frameData...)
+		}
+		if err != nil {
+			return c.writeFatal(err)
+		}
+		if isClose {
+			err = c.writeFatal(ErrCloseSent)
+			if !isLast {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // WriteMessage is a helper method for getting a writer using NextWriter,
 // writing the message and closing the writer.
 func (c *Conn) WriteMessage(messageType int, data []byte) error {
