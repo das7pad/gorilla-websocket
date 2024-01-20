@@ -76,19 +76,21 @@ func (pm *PreparedMessage) frame(key prepareKey) (int, []byte, error) {
 		mu := make(chan struct{}, 1)
 		mu <- struct{}{}
 		var nc prepareConn
+		buf := make([]byte, 2*maxFrameHeaderSize+len(pm.data))
+		nc.buf = *(bytes.NewBuffer(buf[maxFrameHeaderSize:maxFrameHeaderSize]))
 		c := &Conn{
 			conn:                   &nc,
 			mu:                     mu,
 			isServer:               key.isServer,
 			compressionLevel:       key.compressionLevel,
 			enableWriteCompression: true,
-			writeBuf:               make([]byte, defaultWriteBufferSize+maxFrameHeaderSize),
+			writeBuf:               buf[:maxFrameHeaderSize],
 		}
 		if key.compress {
 			c.newCompressionWriter = compressNoContextTakeover
 		}
 		err = c.WriteMessage(pm.messageType, pm.data)
-		frame.data = nc.buf.Bytes()
+		frame.data = nc.buf.Bytes()[:nc.buf.Len():nc.buf.Len()]
 	})
 	return pm.messageType, frame.data, err
 }
