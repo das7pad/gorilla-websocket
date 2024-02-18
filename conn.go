@@ -420,8 +420,14 @@ func (c *Conn) write(frameType int, deadline time.Time, buf0, buf1 []byte) error
 	return nil
 }
 
-func (c *Conn) writeBufs(bufs ...[]byte) error {
-	b := net.Buffers(bufs)
+func (c *Conn) writeBufs(first, second []byte) error {
+	if pc, ok := c.conn.(*prepareConn); ok {
+		pc.buf.Grow(len(first) + len(second))
+		pc.buf.Write(first)
+		pc.buf.Write(second)
+		return nil
+	}
+	b := net.Buffers{first, second}
 	_, err := b.WriteTo(c.conn)
 	return err
 }
