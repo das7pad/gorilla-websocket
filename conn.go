@@ -100,6 +100,16 @@ func (e *netError) Error() string   { return e.msg }
 func (e *netError) Temporary() bool { return e.temporary }
 func (e *netError) Timeout() bool   { return e.timeout }
 
+// netErrorAlias is a type alias for net.Error to avoid shadowing the "Error() string" interface in the struct.
+type netErrorAlias = net.Error
+
+type netErrorNotTemporary struct {
+	// Single field struct, does not require extra allocation for wrapper.
+	netErrorAlias
+}
+
+func (e netErrorNotTemporary) Temporary() bool { return false }
+
 // CloseError represents a close message.
 type CloseError struct {
 	// Code is defined in RFC 6455, section 11.7.
@@ -194,7 +204,7 @@ func newMaskKey() [4]byte {
 
 func hideTempErr(err error) error {
 	if e, ok := err.(net.Error); ok {
-		err = &netError{msg: e.Error(), timeout: e.Timeout()}
+		err = netErrorNotTemporary{netErrorAlias: e}
 	}
 	return err
 }

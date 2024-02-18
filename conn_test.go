@@ -753,3 +753,41 @@ func TestFailedConnectionReadPanic(t *testing.T) {
 	}
 	t.Fatal("should not get here")
 }
+
+func Test_hideTempErr(t *testing.T) {
+	type args struct {
+		err error
+	}
+	tests := []struct {
+		name         string
+		args         args
+		wantSame     bool
+		wantNetError bool
+	}{
+		{
+			name:     "EOF",
+			args:     args{err: io.EOF},
+			wantSame: true,
+		},
+		{
+			name:         "net.DNSError",
+			args:         args{err: &net.DNSError{IsTemporary: true}},
+			wantNetError: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := hideTempErr(tt.args.err)
+			if tt.wantSame && tt.args.err != err {
+				t.Errorf("hideTempErr() error = %v, want %v", err, tt.args.err)
+			}
+			en, ok := err.(net.Error)
+			if ok != tt.wantNetError {
+				t.Errorf("hideTempErr() error = %#v, want net.Error", err)
+			}
+			if ok && en.Temporary() {
+				t.Errorf("hideTempErr() error = %#v, error.Temporary() = true, want false", err)
+			}
+		})
+	}
+}
