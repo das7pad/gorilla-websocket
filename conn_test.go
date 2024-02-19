@@ -515,8 +515,8 @@ func TestWriteAfterMessageWriterClose(t *testing.T) {
 	if _, err := io.WriteString(w, "hello"); err != nil {
 		t.Fatalf("unexpected error writing after getting new writer, %v", err)
 	}
+	_ = w.Close()
 
-	// close w by getting next writer
 	_, err := wc.NextWriter(BinaryMessage)
 	if err != nil {
 		t.Fatalf("unexpected error getting next writer, %v", err)

@@ -249,8 +249,7 @@ type Conn struct {
 	writePool     BufferPool
 	writeBufSize  int
 	writeDeadline time.Time
-	writer        io.WriteCloser // the current writer returned to the application
-	isWriting     bool           // for best-effort concurrent write detection
+	isWriting     bool // for best-effort concurrent write detection
 
 	writeErrMu sync.Mutex
 	writeErr   error
@@ -488,14 +487,6 @@ func (c *Conn) WriteControl(messageType int, data []byte, deadline time.Time) er
 
 // beginMessage prepares a connection and message writer for a new message.
 func (c *Conn) beginMessage(mw *messageWriter, messageType int) error {
-	// Close previous writer if not already closed by the application. It's
-	// probably better to return an error in this situation, but we cannot
-	// change this without breaking existing applications.
-	if c.writer != nil {
-		_ = c.writer.Close()
-		c.writer = nil
-	}
-
 	if !isControl(messageType) && !isData(messageType) {
 		return errBadWriteOpCode
 	}
@@ -535,13 +526,12 @@ func (c *Conn) NextWriter(messageType int) (io.WriteCloser, error) {
 	if err := c.beginMessage(&mw, messageType); err != nil {
 		return nil, err
 	}
-	c.writer = &mw
 	if c.newCompressionWriter != nil && c.enableWriteCompression && isData(messageType) {
-		w := c.newCompressionWriter(c.writer, c.compressionLevel)
+		w := c.newCompressionWriter(&mw, c.compressionLevel)
 		mw.compress = true
-		c.writer = w
+		return w, nil
 	}
-	return c.writer, nil
+	return &mw, nil
 }
 
 type messageWriter struct {
@@ -558,7 +548,6 @@ func (w *messageWriter) endMessage(err error) error {
 	}
 	c := w.c
 	w.err = err
-	c.writer = nil
 	if c.writePool != nil {
 		c.writePool.Put(writePoolData{buf: c.writeBuf})
 		c.writeBuf = nil
@@ -743,7 +732,12 @@ func (w *messageWriter) Close() error {
 	if w.err != nil {
 		return w.err
 	}
-	return w.flushFrame(true, nil)
+	err := w.flushFrame(true, nil)
+	if w.err == nil {
+		// Block further writes after Close.
+		w.err = errWriteClosed
+	}
+	return err
 }
 
 // WritePreparedMessage writes prepared message into connection.
