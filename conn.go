@@ -259,7 +259,6 @@ type Conn struct {
 	newCompressionWriter   func(io.WriteCloser, int) io.WriteCloser
 
 	// Read fields
-	reader  io.ReadCloser // the current reader returned to the application
 	readErr error
 	br      *bufio.Reader
 	// bytes remaining in current frame.
@@ -274,7 +273,6 @@ type Conn struct {
 	handlePing    func(string) error
 	handleClose   func(int, string) error
 	readErrCount  int
-	messageReader *messageReader // the current low-level reader
 
 	readDecompress         bool // whether last read frame had RSV1 set
 	newDecompressionReader func(io.Reader) io.ReadCloser
@@ -1018,13 +1016,6 @@ func (c *Conn) handleProtocolError(message string) error {
 // permanent. Once this method returns a non-nil error, all subsequent calls to
 // this method return the same error.
 func (c *Conn) NextReader() (messageType int, r io.Reader, err error) {
-	// Close previous reader, only relevant for decompression.
-	if c.reader != nil {
-		_ = c.reader.Close()
-		c.reader = nil
-	}
-
-	c.messageReader = nil
 	c.readLength = 0
 
 	for c.readErr == nil {
@@ -1035,12 +1026,11 @@ func (c *Conn) NextReader() (messageType int, r io.Reader, err error) {
 		}
 
 		if frameType == TextMessage || frameType == BinaryMessage {
-			c.messageReader = &messageReader{c}
-			c.reader = c.messageReader
+			mr := messageReader{c}
 			if c.readDecompress {
-				c.reader = c.newDecompressionReader(c.reader)
+				return frameType, c.newDecompressionReader(&mr), nil
 			}
-			return frameType, c.reader, nil
+			return frameType, &mr, nil
 		}
 	}
 
@@ -1059,9 +1049,6 @@ type messageReader struct{ c *Conn }
 
 func (r *messageReader) Read(b []byte) (int, error) {
 	c := r.c
-	if c.messageReader != r {
-		return 0, io.EOF
-	}
 
 	for c.readErr == nil {
 
@@ -1086,7 +1073,6 @@ func (r *messageReader) Read(b []byte) (int, error) {
 		}
 
 		if c.readFinal {
-			c.messageReader = nil
 			return 0, io.EOF
 		}
 
@@ -1100,7 +1086,7 @@ func (r *messageReader) Read(b []byte) (int, error) {
 	}
 
 	err := c.readErr
-	if err == io.EOF && c.messageReader == r {
+	if err == io.EOF {
 		err = errUnexpectedEOF
 	}
 	return 0, err
