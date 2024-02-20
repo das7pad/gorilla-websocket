@@ -204,8 +204,7 @@ func (u *Upgrader) Upgrade(w http.ResponseWriter, r *http.Request, responseHeade
 	c.subprotocol = subprotocol
 
 	if compress {
-		c.newCompressionWriter = compressNoContextTakeover
-		c.newDecompressionReader = decompressNoContextTakeover
+		c.negotiatedPerMessageDeflate = true
 	}
 
 	// Use larger of hijacked buffer and connection write buffer for header.

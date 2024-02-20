@@ -95,8 +95,9 @@ func TestFraming(t *testing.T) {
 				wc := newTestConn(nil, &connBuf, isServer)
 				rc := newTestConn(chunker.f(&connBuf), nil, !isServer)
 				if compress {
-					wc.newCompressionWriter = compressNoContextTakeover
-					rc.newDecompressionReader = decompressNoContextTakeover
+					wc.enableWriteCompression = true
+					wc.negotiatedPerMessageDeflate = true
+					rc.negotiatedPerMessageDeflate = true
 				}
 				for _, n := range frameSizes {
 					for _, writer := range writers {

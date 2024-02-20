@@ -61,7 +61,7 @@ func BenchmarkWriteWithCompression(b *testing.B) {
 	c := newTestConn(nil, w, false)
 	messages := textMessages(100)
 	c.enableWriteCompression = true
-	c.newCompressionWriter = compressNoContextTakeover
+	c.negotiatedPerMessageDeflate = true
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		if err := c.WriteMessage(TextMessage, messages[i%len(messages)]); err != nil {

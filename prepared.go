@@ -84,15 +84,13 @@ func (pm *PreparedMessage) frame(key prepareKey) (int, []byte, error) {
 		buf := make([]byte, 2*writeBufSize+len(pm.data))
 		nc.buf = *(bytes.NewBuffer(buf[writeBufSize:writeBufSize]))
 		c := &Conn{
-			conn:                   &nc,
-			mu:                     mu,
-			isServer:               key.isServer,
-			compressionLevel:       key.compressionLevel,
-			enableWriteCompression: true,
-			writeBuf:               buf[:writeBufSize],
-		}
-		if key.compress {
-			c.newCompressionWriter = compressNoContextTakeover
+			conn:                        &nc,
+			mu:                          mu,
+			isServer:                    key.isServer,
+			compressionLevel:            key.compressionLevel,
+			enableWriteCompression:      key.compress,
+			negotiatedPerMessageDeflate: key.compress,
+			writeBuf:                    buf[:writeBufSize],
 		}
 		err = c.WriteMessage(pm.messageType, pm.data)
 		frame.data = nc.buf.Bytes()[:nc.buf.Len():nc.buf.Len()]

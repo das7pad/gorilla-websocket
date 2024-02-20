@@ -256,7 +256,6 @@ type Conn struct {
 
 	enableWriteCompression bool
 	compressionLevel       int
-	newCompressionWriter   func(io.WriteCloser, int) io.WriteCloser
 
 	// Read fields
 	readErr error
@@ -274,8 +273,8 @@ type Conn struct {
 	handleClose   func(int, string) error
 	readErrCount  int
 
-	readDecompress         bool // whether last read frame had RSV1 set
-	newDecompressionReader func(io.Reader) io.ReadCloser
+	readDecompress              bool // whether last read frame had RSV1 set
+	negotiatedPerMessageDeflate bool
 }
 
 func newConn(conn net.Conn, isServer bool, readBufferSize, writeBufferSize int, writeBufferPool BufferPool, br *bufio.Reader, writeBuf []byte) *Conn {
@@ -524,8 +523,8 @@ func (c *Conn) NextWriter(messageType int) (io.WriteCloser, error) {
 	if err := c.beginMessage(&mw, messageType); err != nil {
 		return nil, err
 	}
-	if c.newCompressionWriter != nil && c.enableWriteCompression && isData(messageType) {
-		w := c.newCompressionWriter(&mw, c.compressionLevel)
+	if c.negotiatedPerMessageDeflate && c.enableWriteCompression && isData(messageType) {
+		w := compressNoContextTakeover(&mw, c.compressionLevel)
 		mw.compress = true
 		return w, nil
 	}
@@ -740,7 +739,7 @@ func (w *messageWriter) Close() error {
 
 // WritePreparedMessage writes prepared message into connection.
 func (c *Conn) WritePreparedMessage(pm *PreparedMessage) error {
-	compress := c.newCompressionWriter != nil && c.enableWriteCompression && isData(pm.messageType)
+	compress := c.negotiatedPerMessageDeflate && c.enableWriteCompression && isData(pm.messageType)
 	cl := c.compressionLevel
 	if !compress {
 		cl = 0
@@ -769,7 +768,7 @@ func (c *Conn) WritePreparedMessage(pm *PreparedMessage) error {
 // writing the message and closing the writer.
 func (c *Conn) WriteMessage(messageType int, data []byte) error {
 
-	if c.isServer && (c.newCompressionWriter == nil || !c.enableWriteCompression) {
+	if c.isServer && (!c.negotiatedPerMessageDeflate || !c.enableWriteCompression) {
 		// Fast path with no allocations and single frame.
 
 		var mw messageWriter
@@ -835,7 +834,7 @@ func (c *Conn) advanceFrame() (int, error) {
 
 	c.readDecompress = false
 	if rsv1 {
-		if c.newDecompressionReader != nil {
+		if c.negotiatedPerMessageDeflate {
 			c.readDecompress = true
 		} else {
 			errors = append(errors, "RSV1 set")
@@ -1028,7 +1027,7 @@ func (c *Conn) NextReader() (messageType int, r io.Reader, err error) {
 		if frameType == TextMessage || frameType == BinaryMessage {
 			mr := messageReader{c}
 			if c.readDecompress {
-				return frameType, c.newDecompressionReader(&mr), nil
+				return frameType, decompressNoContextTakeover(&mr), nil
 			}
 			return frameType, &mr, nil
 		}

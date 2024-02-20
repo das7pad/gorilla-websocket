@@ -43,7 +43,8 @@ func TestPreparedMessage(t *testing.T) {
 		var buf bytes.Buffer
 		c := newTestConn(nil, &buf, tt.isServer)
 		if tt.enableWriteCompression {
-			c.newCompressionWriter = compressNoContextTakeover
+			c.enableWriteCompression = true
+			c.negotiatedPerMessageDeflate = true
 		}
 
 		if err := c.SetCompressionLevel(tt.compressionLevel); err != nil {
