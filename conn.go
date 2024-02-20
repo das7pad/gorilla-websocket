@@ -252,7 +252,7 @@ type Conn struct {
 	writeErr      error
 
 	enableWriteCompression bool
-	compressionLevel       int
+	compressionLevel       int8
 
 	// Read fields
 	readErr error
@@ -1217,7 +1217,7 @@ func (c *Conn) SetCompressionLevel(level int) error {
 	if !isValidCompressionLevel(level) {
 		return errors.New("websocket: invalid compression level")
 	}
-	c.compressionLevel = level
+	c.compressionLevel = int8(level)
 	return nil
 }
 

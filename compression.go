@@ -43,12 +43,12 @@ func isValidCompressionLevel(level int) bool {
 	return minCompressionLevel <= level && level <= maxCompressionLevel
 }
 
-func compressNoContextTakeover(w io.WriteCloser, level int) io.WriteCloser {
+func compressNoContextTakeover(w io.WriteCloser, level int8) io.WriteCloser {
 	p := &flateWriterPools[level-minCompressionLevel]
 	tw := &truncWriter{w: w}
 	fw, _ := p.Get().(*flate.Writer)
 	if fw == nil {
-		fw, _ = flate.NewWriter(tw, level)
+		fw, _ = flate.NewWriter(tw, int(level))
 	} else {
 		fw.Reset(tw)
 	}

@@ -27,7 +27,7 @@ type PreparedMessage struct {
 type prepareKey struct {
 	isServer         bool
 	compress         bool
-	compressionLevel int
+	compressionLevel int8
 }
 
 // preparedFrame contains data in wire representation.
