@@ -761,13 +761,13 @@ type blockingWriter struct {
 
 func (w blockingWriter) Write(p []byte) (int, error) {
 	// Allow main to continue
-	close(w.c1)
+	<-w.c1
 	// Wait for panic in main
 	<-w.c2
 	return len(p), nil
 }
 
-func TestConcurrentWritePanic(t *testing.T) {
+func TestConcurrentWriteNoPanic(t *testing.T) {
 	t.Parallel()
 	w := blockingWriter{make(chan struct{}), make(chan struct{})}
 	c := newTestConn(nil, w, false)
@@ -778,19 +778,17 @@ func TestConcurrentWritePanic(t *testing.T) {
 	}()
 
 	// wait for goroutine to block in write.
-	<-w.c1
+	w.c1 <- struct{}{}
 
-	defer func() {
-		close(w.c2)
-		if v := recover(); v != nil {
-			return
+	go func() {
+		if err := c.WriteMessage(TextMessage, []byte{}); err != nil {
+			t.Error(err)
 		}
 	}()
 
-	if err := c.WriteMessage(TextMessage, []byte{}); err != nil {
-		t.Error(err)
-	}
-	t.Fatal("should not get here")
+	w.c2 <- struct{}{}
+	close(w.c1)
+	close(w.c2)
 }
 
 type failingReader struct{}

@@ -13,7 +13,6 @@ import (
 	"net"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 	"unicode/utf8"
 )
@@ -173,11 +172,12 @@ func IsUnexpectedCloseError(err error, expectedCodes ...int) bool {
 }
 
 var (
-	errWriteTimeout        = &netError{msg: "websocket: write timeout", timeout: true, temporary: true}
-	errUnexpectedEOF       = &CloseError{Code: CloseAbnormalClosure, Text: io.ErrUnexpectedEOF.Error()}
-	errBadWriteOpCode      = errors.New("websocket: bad write message type")
-	errWriteClosed         = errors.New("websocket: write closed")
-	errInvalidControlFrame = errors.New("websocket: invalid control frame")
+	errWriteTimeout          = &netError{msg: "websocket: write timeout", timeout: true, temporary: true}
+	errUnexpectedEOF         = &CloseError{Code: CloseAbnormalClosure, Text: io.ErrUnexpectedEOF.Error()}
+	errBadWriteOpCode        = errors.New("websocket: bad write message type")
+	errWriteClosed           = errors.New("websocket: write closed")
+	errInvalidControlFrame   = errors.New("websocket: invalid control frame")
+	errExtraUsedInClientMode = errors.New("websocket: internal error, extra used in client mode")
 )
 
 // maskRand is an io.Reader for generating mask bytes. The reader is initialized
@@ -244,15 +244,12 @@ type Conn struct {
 	subprotocol string
 
 	// Write fields
-	mu            chan struct{} // used as mutex to protect write to conn
+	mu            chan struct{} // used as mutex to protect writes to conn or writeBuf and returning of writeBuf to writePool
 	writeBuf      []byte        // frame is constructed in this buffer.
 	writePool     BufferPool
 	writeBufSize  int
 	writeDeadline time.Time
-	isWriting     bool // for best-effort concurrent write detection
-
-	writeErrMu sync.Mutex
-	writeErr   error
+	writeErr      error
 
 	enableWriteCompression bool
 	compressionLevel       int
@@ -350,11 +347,9 @@ func (c *Conn) RemoteAddr() net.Addr {
 // Write methods
 
 func (c *Conn) writeFatal(err error) error {
-	c.writeErrMu.Lock()
 	if c.writeErr == nil {
 		c.writeErr = err
 	}
-	c.writeErrMu.Unlock()
 	return err
 }
 
@@ -370,13 +365,7 @@ func (c *Conn) read(n int) ([]byte, error) {
 }
 
 func (c *Conn) write(frameType int, deadline time.Time, buf0, buf1 []byte) error {
-	<-c.mu
-	defer func() { c.mu <- struct{}{} }()
-
-	c.writeErrMu.Lock()
-	err := c.writeErr
-	c.writeErrMu.Unlock()
-	if err != nil {
+	if err := c.writeErr; err != nil {
 		return err
 	}
 
@@ -384,12 +373,13 @@ func (c *Conn) write(frameType int, deadline time.Time, buf0, buf1 []byte) error
 		return c.writeFatal(err)
 	}
 	if len(buf1) == 0 {
-		_, err = c.conn.Write(buf0)
+		if _, err := c.conn.Write(buf0); err != nil {
+			return c.writeFatal(err)
+		}
 	} else {
-		err = c.writeBufs(buf0, buf1)
-	}
-	if err != nil {
-		return c.writeFatal(err)
+		if err := c.writeBufs(buf0, buf1); err != nil {
+			return c.writeFatal(err)
+		}
 	}
 	if frameType == CloseMessage {
 		_ = c.writeFatal(ErrCloseSent)
@@ -439,18 +429,19 @@ func (c *Conn) WriteControl(messageType int, data []byte, deadline time.Time) er
 
 	if deadline.IsZero() {
 		// No timeout for zero time.
-		<-c.mu
+		<-c.mu // take ownership
 	} else {
 		d := time.Until(deadline)
 		if d < 0 {
 			return errWriteTimeout
 		}
 		select {
-		case <-c.mu:
+		case <-c.mu: // take ownership
 		default:
+			// Another write is pending, wait with timeout
 			timer := time.NewTimer(d)
 			select {
-			case <-c.mu:
+			case <-c.mu: // take ownership
 				if !timer.Stop() {
 					<-timer.C
 				}
@@ -460,26 +451,22 @@ func (c *Conn) WriteControl(messageType int, data []byte, deadline time.Time) er
 		}
 	}
 
-	defer func() { c.mu <- struct{}{} }()
+	defer func() { c.mu <- struct{}{} }() // return ownership
 
-	c.writeErrMu.Lock()
-	err := c.writeErr
-	c.writeErrMu.Unlock()
-	if err != nil {
+	if err := c.writeErr; err != nil {
 		return err
 	}
 
 	if err := c.conn.SetWriteDeadline(deadline); err != nil {
 		return c.writeFatal(err)
 	}
-	_, err = c.conn.Write(buf)
-	if err != nil {
+	if _, err := c.conn.Write(buf); err != nil {
 		return c.writeFatal(err)
 	}
 	if messageType == CloseMessage {
 		_ = c.writeFatal(ErrCloseSent)
 	}
-	return err
+	return nil
 }
 
 // beginMessage prepares a connection and message writer for a new message.
@@ -488,10 +475,7 @@ func (c *Conn) beginMessage(mw *messageWriter, messageType int) error {
 		return errBadWriteOpCode
 	}
 
-	c.writeErrMu.Lock()
-	err := c.writeErr
-	c.writeErrMu.Unlock()
-	if err != nil {
+	if err := c.writeErr; err != nil {
 		return err
 	}
 
@@ -519,6 +503,9 @@ func (c *Conn) beginMessage(mw *messageWriter, messageType int) error {
 // All message types (TextMessage, BinaryMessage, CloseMessage, PingMessage and
 // PongMessage) are supported.
 func (c *Conn) NextWriter(messageType int) (io.WriteCloser, error) {
+	<-c.mu                                // take ownership
+	defer func() { c.mu <- struct{}{} }() // return ownership
+
 	var mw messageWriter
 	if err := c.beginMessage(&mw, messageType); err != nil {
 		return nil, err
@@ -606,26 +593,11 @@ func (w *messageWriter) flushFrame(final bool, extra []byte) error {
 		copy(c.writeBuf[maxFrameHeaderSize-4:], key[:])
 		maskBytes(key, 0, c.writeBuf[maxFrameHeaderSize:w.pos])
 		if len(extra) > 0 {
-			return w.endMessage(c.writeFatal(errors.New("websocket: internal error, extra used in client mode")))
+			return w.endMessage(c.writeFatal(errExtraUsedInClientMode))
 		}
 	}
 
-	// Write the buffers to the connection with best-effort detection of
-	// concurrent writes. See the concurrency section in the package
-	// documentation for more info.
-
-	if c.isWriting {
-		panic("concurrent write to websocket connection")
-	}
-	c.isWriting = true
-
 	err := c.write(w.frameType, c.writeDeadline, c.writeBuf[framePos:w.pos], extra)
-
-	if !c.isWriting {
-		panic("concurrent write to websocket connection")
-	}
-	c.isWriting = false
-
 	if err != nil {
 		return w.endMessage(err)
 	}
@@ -656,6 +628,9 @@ func (w *messageWriter) ncopy(max int) (int, error) {
 }
 
 func (w *messageWriter) Write(p []byte) (int, error) {
+	<-w.c.mu                                // take ownership
+	defer func() { w.c.mu <- struct{}{} }() // return ownership
+
 	if w.err != nil {
 		return 0, w.err
 	}
@@ -683,6 +658,9 @@ func (w *messageWriter) Write(p []byte) (int, error) {
 }
 
 func (w *messageWriter) WriteString(p string) (int, error) {
+	<-w.c.mu                                // take ownership
+	defer func() { w.c.mu <- struct{}{} }() // return ownership
+
 	if w.err != nil {
 		return 0, w.err
 	}
@@ -701,6 +679,9 @@ func (w *messageWriter) WriteString(p string) (int, error) {
 }
 
 func (w *messageWriter) ReadFrom(r io.Reader) (nn int64, err error) {
+	<-w.c.mu                                // take ownership
+	defer func() { w.c.mu <- struct{}{} }() // return ownership
+
 	if w.err != nil {
 		return 0, w.err
 	}
@@ -726,6 +707,9 @@ func (w *messageWriter) ReadFrom(r io.Reader) (nn int64, err error) {
 }
 
 func (w *messageWriter) Close() error {
+	<-w.c.mu                                // take ownership
+	defer func() { w.c.mu <- struct{}{} }() // return ownership
+
 	if w.err != nil {
 		return w.err
 	}
@@ -739,6 +723,9 @@ func (w *messageWriter) Close() error {
 
 // WritePreparedMessage writes prepared message into connection.
 func (c *Conn) WritePreparedMessage(pm *PreparedMessage) error {
+	<-c.mu                                // take ownership
+	defer func() { c.mu <- struct{}{} }() // return ownership
+
 	compress := c.negotiatedPerMessageDeflate && c.enableWriteCompression && isData(pm.messageType)
 	cl := c.compressionLevel
 	if !compress {
@@ -752,24 +739,16 @@ func (c *Conn) WritePreparedMessage(pm *PreparedMessage) error {
 	if err != nil {
 		return err
 	}
-	if c.isWriting {
-		panic("concurrent write to websocket connection")
-	}
-	c.isWriting = true
-	err = c.write(frameType, c.writeDeadline, frameData, nil)
-	if !c.isWriting {
-		panic("concurrent write to websocket connection")
-	}
-	c.isWriting = false
-	return err
+	return c.write(frameType, c.writeDeadline, frameData, nil)
 }
 
 // WriteMessage is a helper method for getting a writer using NextWriter,
 // writing the message and closing the writer.
 func (c *Conn) WriteMessage(messageType int, data []byte) error {
-
+	<-c.mu // take ownership
 	if c.isServer && (!c.negotiatedPerMessageDeflate || !c.enableWriteCompression) {
 		// Fast path with no allocations and single frame.
+		defer func() { c.mu <- struct{}{} }() // return ownership
 
 		var mw messageWriter
 		if err := c.beginMessage(&mw, messageType); err != nil {
@@ -780,15 +759,18 @@ func (c *Conn) WriteMessage(messageType int, data []byte) error {
 		data = data[n:]
 		return mw.flushFrame(true, data)
 	}
+	c.mu <- struct{}{} // return ownership, NextWriter will take it again
 
 	w, err := c.NextWriter(messageType)
 	if err != nil {
 		return err
 	}
-	if _, err = w.Write(data); err != nil {
-		return err
+	_, err1 := w.Write(data)
+	err2 := w.Close()
+	if err1 != nil {
+		return err1
 	}
-	return w.Close()
+	return err2
 }
 
 // SetWriteDeadline sets the write deadline on the underlying network
