@@ -106,7 +106,7 @@ func (u *Upgrader) selectSubprotocol(r *http.Request, responseHeader http.Header
 		for _, clientProtocol := range clientProtocols {
 			for _, serverProtocol := range u.Subprotocols {
 				if clientProtocol == serverProtocol {
-					return clientProtocol
+					return serverProtocol
 				}
 			}
 		}
