@@ -263,7 +263,7 @@ type Conn struct {
 	readFinal     bool  // true the current message has more frames.
 	readLength    int64 // Message size.
 	readLimit     int64 // Maximum message size.
-	readMaskPos   int
+	readMaskPos   uint8
 	readMaskKey   [4]byte
 	handlePong    func(string) error
 	handlePing    func(string) error

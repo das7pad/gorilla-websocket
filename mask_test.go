@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-func maskBytesByByte(key [4]byte, pos int, b []byte) int {
+func maskBytesByByte(key [4]byte, pos uint8, b []byte) uint8 {
 	for i := range b {
 		b[i] ^= key[pos&3]
 		pos++
@@ -33,7 +33,7 @@ func TestMaskBytes(t *testing.T) {
 	key := [4]byte{1, 2, 3, 4}
 	for size := 1; size <= 1024; size++ {
 		for align := 0; align < wordSize; align++ {
-			for pos := 0; pos < 4; pos++ {
+			for pos := uint8(0); pos < 4; pos++ {
 				b := make([]byte, size+align)[align:]
 				maskBytes(key, pos, b)
 				maskBytesByByte(key, pos, b)
@@ -52,7 +52,7 @@ func BenchmarkMaskBytes(b *testing.B) {
 				b.Run(fmt.Sprintf("align-%d", align), func(b *testing.B) {
 					for _, fn := range []struct {
 						name string
-						fn   func(key [4]byte, pos int, b []byte) int
+						fn   func(key [4]byte, pos uint8, b []byte) uint8
 					}{
 						{"byte", maskBytesByByte},
 						{"word", maskBytes},
