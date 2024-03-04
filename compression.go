@@ -184,6 +184,7 @@ func (w *flateWriteWrapper) Close() error {
 type flateReadWrapper struct {
 	fr io.ReadCloser
 	flateReadSource
+	autoClosedOnEOF bool
 }
 
 func (r *flateReadWrapper) Read(p []byte) (int, error) {
@@ -196,16 +197,24 @@ func (r *flateReadWrapper) Read(p []byte) (int, error) {
 		// scenarios where the application does not call NextReader() soon after
 		// this final read.
 		_ = r.Close()
+		r.autoClosedOnEOF = true
 	}
 	return n, err
 }
 
 func (r *flateReadWrapper) Close() error {
+	if r.autoClosedOnEOF {
+		return nil
+	}
 	if r.fr == nil {
 		return io.ErrClosedPipe
 	}
-	err := r.fr.Close()
+	err1 := r.fr.Close()
 	flateReaderPool.Put(r.fr)
 	r.fr = nil
-	return err
+	err2 := r.r.Close()
+	if err1 != nil {
+		return err1
+	}
+	return err2
 }

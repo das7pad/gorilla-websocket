@@ -131,6 +131,13 @@ func TestFraming(t *testing.T) {
 							continue
 						}
 
+						if ro, ok := r.(io.Closer); ok {
+							if err = ro.Close(); err != nil {
+								t.Errorf("%s: Close() returnd %v", name, err)
+								continue
+							}
+						}
+
 						if len(rbuf) != n {
 							t.Errorf("%s: len(rbuf) is %d, want %d", name, len(rbuf), n)
 							continue
