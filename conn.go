@@ -54,6 +54,7 @@ const (
 	CloseInternalServerErr       = 1011
 	CloseServiceRestart          = 1012
 	CloseTryAgainLater           = 1013
+	CloseBadGateway              = 1014
 	CloseTLSHandshake            = 1015
 )
 
@@ -200,27 +201,31 @@ func isData(frameType int) bool {
 	return frameType == TextMessage || frameType == BinaryMessage
 }
 
-var validReceivedCloseCodes = map[int]bool{
+var validReceivedCloseCodes = [16]bool{
 	// see http://www.iana.org/assignments/websocket/websocket.xhtml#close-code-number
-
-	CloseNormalClosure:           true,
-	CloseGoingAway:               true,
-	CloseProtocolError:           true,
-	CloseUnsupportedData:         true,
-	CloseNoStatusReceived:        false,
-	CloseAbnormalClosure:         false,
-	CloseInvalidFramePayloadData: true,
-	ClosePolicyViolation:         true,
-	CloseMessageTooBig:           true,
-	CloseMandatoryExtension:      true,
-	CloseInternalServerErr:       true,
-	CloseServiceRestart:          true,
-	CloseTryAgainLater:           true,
-	CloseTLSHandshake:            false,
+	true,  // CloseNormalClosure
+	true,  // CloseGoingAway
+	true,  // CloseProtocolError
+	true,  // CloseUnsupportedData
+	false, // reserved
+	false, // CloseNoStatusReceived
+	false, // CloseAbnormalClosure
+	true,  // CloseInvalidFramePayloadData
+	true,  // ClosePolicyViolation
+	true,  // CloseMessageTooBig
+	true,  // CloseMandatoryExtension
+	true,  // CloseInternalServerErr
+	true,  // CloseServiceRestart
+	true,  // CloseTryAgainLater
+	true,  // CloseBadGateway
+	false, // CloseTLSHandshake
 }
 
 func isValidReceivedCloseCode(code int) bool {
-	return validReceivedCloseCodes[code] || (code >= 3000 && code <= 4999)
+	if code >= CloseNormalClosure && code <= CloseTLSHandshake {
+		return validReceivedCloseCodes[code-CloseNormalClosure]
+	}
+	return code >= 3000 && code <= 4999
 }
 
 // BufferPool represents a pool of buffers. The *sync.Pool type satisfies this
