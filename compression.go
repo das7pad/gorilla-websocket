@@ -8,7 +8,6 @@ import (
 	"compress/flate"
 	"errors"
 	"io"
-	"strings"
 	"sync"
 )
 
@@ -25,18 +24,44 @@ var (
 	}}
 )
 
-func decompressNoContextTakeover(r io.Reader) io.ReadCloser {
-	const tail =
-	// Add four bytes as specified in RFC
-	"\x00\x00\xff\xff" +
-		// Add final block to squelch unexpected EOF error from flate reader.
-		"\x01\x00\x00\xff\xff"
+const flateReadTail =
+// Add four bytes as specified in RFC
+"\x00\x00\xff\xff" +
+	// Add final block to squelch unexpected EOF error from flate reader.
+	"\x01\x00\x00\xff\xff"
 
-	fr, _ := flateReaderPool.Get().(io.ReadCloser)
-	if err := fr.(flate.Resetter).Reset(io.MultiReader(r, strings.NewReader(tail)), nil); err != nil {
+func decompressNoContextTakeover(r io.Reader) io.ReadCloser {
+	f := flateReadWrapper{
+		fr:              flateReaderPool.Get().(io.ReadCloser),
+		flateReadSource: flateReadSource{r: r, i: -1},
+	}
+	if err := f.fr.(flate.Resetter).Reset(&f.flateReadSource, nil); err != nil {
 		panic(err)
 	}
-	return &flateReadWrapper{fr}
+	return &f
+}
+
+type flateReadSource struct {
+	r io.Reader
+	i int
+}
+
+func (f *flateReadSource) Read(p []byte) (n int, err error) {
+	switch f.i {
+	case -1:
+		n, err = f.r.Read(p)
+		if err != nil && err == io.EOF {
+			f.i = 0
+			return n, nil
+		}
+		return n, err
+	case len(flateReadTail):
+		return 0, io.EOF
+	default:
+		n = copy(p, flateReadTail[f.i:])
+		f.i += n
+		return n, nil
+	}
 }
 
 func isValidCompressionLevel(level int) bool {
@@ -140,6 +165,7 @@ func (w *flateWriteWrapper) Close() error {
 
 type flateReadWrapper struct {
 	fr io.ReadCloser
+	flateReadSource
 }
 
 func (r *flateReadWrapper) Read(p []byte) (int, error) {
