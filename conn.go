@@ -751,18 +751,25 @@ func (c *Conn) WritePreparedMessage(pm *PreparedMessage) error {
 	<-c.mu                                // take ownership
 	defer func() { c.mu <- struct{}{} }() // return ownership
 
-	compress := c.negotiatedPerMessageDeflate && c.enableWriteCompression && isData(pm.messageType)
-	cl := c.compressionLevel
-	if !compress {
-		cl = 0
-	}
-	frameType, frameData, err := pm.frame(prepareKey{
-		isServer:         c.isServer,
-		compress:         compress,
-		compressionLevel: cl,
-	})
-	if err != nil {
-		return err
+	frameType := int(pm.messageType)
+	compress := c.negotiatedPerMessageDeflate && c.enableWriteCompression && isData(frameType)
+	var frameData []byte
+	if c.isServer && !compress {
+		frameData = pm.data
+	} else {
+		cl := c.compressionLevel
+		if !compress {
+			cl = 0
+		}
+		var err error
+		frameType, frameData, err = pm.frame(prepareKey{
+			isServer:         c.isServer,
+			compress:         compress,
+			compressionLevel: cl,
+		})
+		if err != nil {
+			return err
+		}
 	}
 	return c.write(frameType, c.writeDeadline, frameData, nil)
 }

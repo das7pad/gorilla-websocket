@@ -17,7 +17,8 @@ import (
 // because the CPU and memory expensive compression operation can be executed
 // once for a given set of compression options.
 type PreparedMessage struct {
-	messageType int
+	messageType uint8
+	offset      uint8
 	data        []byte
 	mu          sync.Mutex
 	frames      map[prepareKey]*preparedFrame
@@ -42,8 +43,8 @@ type preparedFrame struct {
 // connection options.
 func NewPreparedMessage(messageType int, data []byte) (*PreparedMessage, error) {
 	pm := &PreparedMessage{
-		messageType: messageType,
-		frames:      make(map[prepareKey]*preparedFrame),
+		messageType: uint8(messageType),
+		frames:      make(map[prepareKey]*preparedFrame, 1),
 		data:        data,
 	}
 
@@ -55,7 +56,8 @@ func NewPreparedMessage(messageType int, data []byte) (*PreparedMessage, error) 
 
 	// To protect against caller modifying the data argument, remember the data
 	// copied to the plain server frame.
-	pm.data = frameData[len(frameData)-len(data):]
+	pm.data = frameData
+	pm.offset = uint8(len(frameData) - len(data))
 	return pm, nil
 }
 
@@ -92,10 +94,10 @@ func (pm *PreparedMessage) frame(key prepareKey) (int, []byte, error) {
 			negotiatedPerMessageDeflate: key.compress,
 			writeBuf:                    buf[:writeBufSize],
 		}
-		err = c.WriteMessage(pm.messageType, pm.data)
+		err = c.WriteMessage(int(pm.messageType), pm.data[pm.offset:])
 		frame.data = nc.buf.Bytes()[:nc.buf.Len():nc.buf.Len()]
 	})
-	return pm.messageType, frame.data, err
+	return int(pm.messageType), frame.data, err
 }
 
 type prepareConn struct {
