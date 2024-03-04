@@ -30,7 +30,7 @@ const flateReadTail =
 	// Add final block to squelch unexpected EOF error from flate reader.
 	"\x01\x00\x00\xff\xff"
 
-func decompressNoContextTakeover(r io.Reader) io.ReadCloser {
+func decompressNoContextTakeover(r *messageReader) *flateReadWrapper {
 	f := flateReadWrapper{
 		fr:              flateReaderPool.Get().(io.ReadCloser),
 		flateReadSource: flateReadSource{r: r, i: -1},
@@ -42,7 +42,7 @@ func decompressNoContextTakeover(r io.Reader) io.ReadCloser {
 }
 
 type flateReadSource struct {
-	r io.Reader
+	r *messageReader
 	i int
 }
 
@@ -61,6 +61,24 @@ func (f *flateReadSource) Read(p []byte) (n int, err error) {
 		n = copy(p, flateReadTail[f.i:])
 		f.i += n
 		return n, nil
+	}
+}
+
+func (f *flateReadSource) ReadByte() (byte, error) {
+	switch f.i {
+	case -1:
+		b, err := f.r.ReadByte()
+		if err != nil && err == io.EOF {
+			f.i = 1
+			return flateReadTail[0], nil
+		}
+		return b, err
+	case len(flateReadTail):
+		return 0, io.EOF
+	default:
+		c := flateReadTail[f.i]
+		f.i++
+		return c, nil
 	}
 }
 

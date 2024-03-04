@@ -1073,6 +1073,18 @@ func (r *messageReader) Read(b []byte) (int, error) {
 	return 0, err
 }
 
+func (r *messageReader) ReadByte() (byte, error) {
+	var b [1]byte
+	for {
+		if n, err := r.Read(b[:]); err != nil {
+			return 0, err
+		} else if n == 1 {
+			break
+		}
+	}
+	return b[0], nil
+}
+
 func (r *messageReader) Close() error {
 	return nil
 }
