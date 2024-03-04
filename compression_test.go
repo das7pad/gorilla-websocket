@@ -23,10 +23,11 @@ func TestTruncWriter(t *testing.T) {
 			if m > n {
 				m = n
 			}
-			if _, err := w.Write(p[:m]); err != nil {
+			nn, err := w.Write(p[:m])
+			if err != nil {
 				t.Fatal(err)
 			}
-			p = p[m:]
+			p = p[nn:]
 		}
 		if err := w.w.Close(); err != nil {
 			t.Fatal(err)

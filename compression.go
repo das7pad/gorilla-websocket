@@ -81,14 +81,14 @@ func (w *truncWriter) Write(p []byte) (int, error) {
 		m = len(w.p)
 	}
 
-	if nn, err := w.w.Write(w.p[:m]); err != nil {
-		return n + nn, err
+	if _, err := w.w.Write(w.p[:m]); err != nil {
+		return n, err
 	}
 
 	copy(w.p[:], w.p[m:])
-	copy(w.p[len(w.p)-m:], p[len(p)-m:])
-	nn, err := w.w.Write(p[:len(p)-m])
-	return n + nn, err
+	nn := copy(w.p[len(w.p)-m:], p[len(p)-m:])
+	nnn, err := w.w.Write(p[:len(p)-m])
+	return n + nn + nnn, err
 }
 
 type flateWriteWrapper struct {
