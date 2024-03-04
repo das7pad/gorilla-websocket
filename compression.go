@@ -65,30 +65,47 @@ type truncWriter struct {
 
 func (w *truncWriter) Write(p []byte) (int, error) {
 	n := 0
-
-	// fill buffer first for simplicity.
-	if w.n < len(w.p) {
+	if (w.n > 0 || len(p) < len(w.p)) && w.n < len(w.p) {
 		n = copy(w.p[w.n:], p)
 		p = p[n:]
 		w.n += n
-		if len(p) == 0 {
-			return n, nil
+	}
+	if len(p) == 0 {
+		return n, nil
+	}
+	m := len(p) - len(w.p)
+	if m < 0 {
+		nn, err := w.w.Write(w.p[:len(p)])
+		w.n -= nn
+		copy(w.p[:], w.p[nn:])
+		if err != nil {
+			return n, err
+		}
+		nn = copy(w.p[w.n:], p)
+		w.n += nn
+		return n + nn, nil
+	}
+	if w.n > 0 {
+		nn, err := w.w.Write(w.p[:])
+		w.n -= nn
+		if w.n > 0 {
+			copy(w.p[:], w.p[nn:])
+		}
+		if err != nil {
+			return n, err
 		}
 	}
-
-	m := len(p)
-	if m > len(w.p) {
-		m = len(w.p)
+	if m > 0 {
+		nn, err := w.w.Write(p[:m])
+		n += nn
+		if err != nil {
+			return n, err
+		}
+		p = p[nn:]
 	}
-
-	if _, err := w.w.Write(w.p[:m]); err != nil {
-		return n, err
-	}
-
-	copy(w.p[:], w.p[m:])
-	nn := copy(w.p[len(w.p)-m:], p[len(p)-m:])
-	nnn, err := w.w.Write(p[:len(p)-m])
-	return n + nn + nnn, err
+	w.n += copy(w.p[w.n:], p)
+	n += w.n
+	return n, nil
 }
 
 type flateWriteWrapper struct {
