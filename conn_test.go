@@ -101,7 +101,7 @@ func TestFraming(t *testing.T) {
 				}
 				for _, n := range frameSizes {
 					for _, writer := range writers {
-						name := fmt.Sprintf("z:%v, s:%v, r:%s, n:%d w:%s", compress, isServer, chunker.name, n, writer.name)
+						name := fmt.Sprintf("compress=%v, isServer=%v, chunker=%s, n=%d writer=%s", compress, isServer, chunker.name, n, writer.name)
 
 						w, err := wc.NextWriter(TextMessage)
 						if err != nil {
@@ -512,13 +512,16 @@ func TestWriteAfterMessageWriterClose(t *testing.T) {
 		t.Fatalf("no error writing after close")
 	}
 
-	w, _ = wc.NextWriter(BinaryMessage)
+	w, err := wc.NextWriter(BinaryMessage)
+	if err != nil {
+		t.Fatalf("unexpected error getting next writer, %v", err)
+	}
 	if _, err := io.WriteString(w, "hello"); err != nil {
 		t.Fatalf("unexpected error writing after getting new writer, %v", err)
 	}
 	_ = w.Close()
 
-	_, err := wc.NextWriter(BinaryMessage)
+	_, err = wc.NextWriter(BinaryMessage)
 	if err != nil {
 		t.Fatalf("unexpected error getting next writer, %v", err)
 	}
@@ -578,11 +581,15 @@ func TestReadLimit(t *testing.T) {
 			t.Fatalf("wc.WriteMessage() returned %v", err)
 		}
 
-		op, _, err := rc.NextReader()
+		op, r, err := rc.NextReader()
 		if op != BinaryMessage || err != nil {
 			t.Fatalf("1: NextReader() returned %d, %v", op, err)
 		}
-		op, r, err := rc.NextReader()
+		_, err = io.Copy(io.Discard, r)
+		if err != nil {
+			t.Fatalf("io.Copy() returned %v", err)
+		}
+		op, r, err = rc.NextReader()
 		if op != BinaryMessage || err != nil {
 			t.Fatalf("2: NextReader() returned %d, %v", op, err)
 		}

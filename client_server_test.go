@@ -97,22 +97,25 @@ func (t cstHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer ws.Close()
 
 	if ws.Subprotocol() != "p1" {
-		t.Logf("Subprotocol() = %s, want p1", ws.Subprotocol())
-		ws.Close()
+		t.Fatalf("Subprotocol() = %s, want p1", ws.Subprotocol())
 		return
 	}
 	op, rd, err := ws.NextReader()
 	if err != nil {
+		t.Fatal(err)
 		return
 	}
 	wr, err := ws.NextWriter(op)
 	if err != nil {
+		t.Fatal(err)
 		return
 	}
 	if _, err = io.Copy(wr, rd); err != nil {
+		t.Fatal(err)
 		return
 	}
-	if err := wr.Close(); err != nil {
+	if err = wr.Close(); err != nil {
+		t.Fatal(err)
 		return
 	}
 }
@@ -383,7 +386,8 @@ func TestHandshakeTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatal("Dial:", err)
 	}
-	ws.Close()
+	defer ws.Close()
+	sendRecv(t, ws)
 }
 
 func TestHandshakeTimeoutInContext(t *testing.T) {
@@ -405,7 +409,8 @@ func TestHandshakeTimeoutInContext(t *testing.T) {
 	if err != nil {
 		t.Fatal("Dial:", err)
 	}
-	ws.Close()
+	defer ws.Close()
+	sendRecv(t, ws)
 }
 
 func TestDialBadScheme(t *testing.T) {

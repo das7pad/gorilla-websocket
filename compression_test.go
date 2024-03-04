@@ -28,8 +28,11 @@ func TestTruncWriter(t *testing.T) {
 			}
 			p = p[m:]
 		}
-		if b.String() != data[:len(data)-len(w.p)] {
-			t.Errorf("%d: %q", n, b.String())
+		if err := w.w.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if got, want := b.String(), data[:len(data)-len(w.p)]; got != want {
+			t.Errorf("%d: got=%q want=%q", n, got, want)
 		}
 	}
 }
