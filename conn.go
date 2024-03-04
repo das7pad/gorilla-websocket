@@ -45,6 +45,7 @@ const (
 	CloseGoingAway               = 1001
 	CloseProtocolError           = 1002
 	CloseUnsupportedData         = 1003
+	closeReserved                = 1004
 	CloseNoStatusReceived        = 1005
 	CloseAbnormalClosure         = 1006
 	CloseInvalidFramePayloadData = 1007
@@ -219,6 +220,25 @@ var validReceivedCloseCodes = [16]bool{
 	true,  // CloseTryAgainLater
 	true,  // CloseBadGateway
 	false, // CloseTLSHandshake
+}
+
+var closeErrors = [16]CloseError{
+	{Code: CloseNormalClosure},
+	{Code: CloseGoingAway},
+	{Code: CloseProtocolError},
+	{Code: CloseUnsupportedData},
+	{Code: closeReserved},
+	{Code: CloseNoStatusReceived},
+	{Code: CloseAbnormalClosure},
+	{Code: CloseInvalidFramePayloadData},
+	{Code: ClosePolicyViolation},
+	{Code: CloseMessageTooBig},
+	{Code: CloseMandatoryExtension},
+	{Code: CloseInternalServerErr},
+	{Code: CloseServiceRestart},
+	{Code: CloseTryAgainLater},
+	{Code: CloseBadGateway},
+	{Code: CloseTLSHandshake},
 }
 
 func isValidReceivedCloseCode(code int) bool {
@@ -966,13 +986,18 @@ func (c *Conn) advanceFrame() (int, error) {
 			if !isValidReceivedCloseCode(closeCode) {
 				return noFrame, c.handleProtocolError("bad close code " + strconv.Itoa(closeCode))
 			}
-			closeText = string(payload[2:])
-			if !utf8.ValidString(closeText) {
-				return noFrame, c.handleProtocolError("invalid utf8 payload in close frame")
+			if len(payload) > 2 {
+				closeText = string(payload[2:])
+				if !utf8.ValidString(closeText) {
+					return noFrame, c.handleProtocolError("invalid utf8 payload in close frame")
+				}
 			}
 		}
 		if err := c.CloseHandler()(closeCode, closeText); err != nil {
 			return noFrame, err
+		}
+		if closeCode >= CloseNormalClosure && closeCode <= CloseTLSHandshake && len(closeText) == 0 {
+			return noFrame, &closeErrors[closeCode-CloseNormalClosure]
 		}
 		return noFrame, &CloseError{Code: closeCode, Text: closeText}
 	}
