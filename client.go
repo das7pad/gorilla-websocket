@@ -371,12 +371,12 @@ func (d *Dialer) DialContext(ctx context.Context, urlStr string, requestHeader h
 	}
 
 	if trace != nil && trace.GotFirstResponseByte != nil {
-		if peek, err := conn.br.Peek(1); err == nil && len(peek) == 1 {
+		if peek, err := conn.c.BR.Peek(1); err == nil && len(peek) == 1 {
 			trace.GotFirstResponseByte()
 		}
 	}
 
-	resp, err := http.ReadResponse(conn.br, req)
+	resp, err := http.ReadResponse(conn.c.BR, req)
 	if err != nil {
 		if d.TLSClientConfig != nil {
 			for _, proto := range d.TLSClientConfig.NextProtos {
@@ -420,7 +420,7 @@ func (d *Dialer) DialContext(ctx context.Context, urlStr string, requestHeader h
 		if !snct || !cnct {
 			return nil, resp, errInvalidCompression
 		}
-		conn.negotiatedPerMessageDeflate = true
+		conn.c.NegotiatedPerMessageDeflate = true
 		break
 	}
 

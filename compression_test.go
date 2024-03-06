@@ -7,16 +7,20 @@ import (
 	"testing"
 )
 
-type nopCloser struct{ io.Writer }
-
-func (nopCloser) Close() error { return nil }
-
 func TestTruncWriter(t *testing.T) {
 	t.Parallel()
 	const data = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijlkmnopqrstuvwxyz987654321"
 	for n := 1; n <= 10; n++ {
 		var b bytes.Buffer
-		w := &truncWriter{w: nopCloser{&b}}
+		c := newTestConn(nil, &b, true)
+		w := &truncWriter{}
+		{
+			lw, err := c.c.nextWriter(BinaryMessage)
+			if err != nil {
+				t.Fatal(err)
+			}
+			w.w = &lw
+		}
 		p := []byte(data)
 		for len(p) > 0 {
 			m := len(p)
@@ -32,7 +36,7 @@ func TestTruncWriter(t *testing.T) {
 		if err := w.w.Close(); err != nil {
 			t.Fatal(err)
 		}
-		if got, want := b.String(), data[:len(data)-len(w.p)]; got != want {
+		if got, want := b.String()[2:], data[:len(data)-len(w.p)]; got != want {
 			t.Errorf("%d: got=%q want=%q", n, got, want)
 		}
 	}
@@ -64,8 +68,7 @@ func BenchmarkWriteWithCompression(b *testing.B) {
 	w := io.Discard
 	c := newTestConn(nil, w, false)
 	messages := textMessages(100)
-	c.enableWriteCompression = true
-	c.negotiatedPerMessageDeflate = true
+	c.c.NegotiatedPerMessageDeflate = true
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		if err := c.WriteMessage(TextMessage, messages[i%len(messages)]); err != nil {

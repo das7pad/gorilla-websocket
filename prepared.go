@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"net"
 	"sync"
-	"time"
 )
 
 // PreparedMessage caches on the wire representations of a message payload.
@@ -49,7 +48,8 @@ func NewPreparedMessage(messageType int, data []byte) (*PreparedMessage, error) 
 	}
 
 	// Prepare a plain server frame.
-	_, frameData, err := pm.frame(prepareKey{isServer: true, compress: false})
+	key := prepareKey{isServer: true, compress: false, compressionLevel: DisableCompression}
+	_, frameData, err := pm.frame(key)
 	if err != nil {
 		return nil, err
 	}
@@ -75,23 +75,16 @@ func (pm *PreparedMessage) frame(key prepareKey) (int, []byte, error) {
 		// Prepare a frame using a 'fake' connection.
 		// TODO: Refactor code in conn.go to allow more direct construction of
 		// the frame.
-		mu := make(chan struct{}, 1)
-		mu <- struct{}{}
 		var nc prepareConn
 		if key.isServer && !key.compress {
 			// Pre-allocate the full buffer in the simple case
 			nc.buf.Grow(len(pm.data[pm.offset:]) + maxFrameHeaderSize)
 		}
-		writeBufSize := defaultWriteBufferSize + maxFrameHeaderSize
-		c := &Conn{
-			conn:                        &nc,
-			mu:                          mu,
-			writeBufSize:                writeBufSize,
-			writePool:                   &bulkWriteBufferPool,
-			isServer:                    key.isServer,
-			compressionLevel:            key.compressionLevel,
-			enableWriteCompression:      key.compress,
-			negotiatedPerMessageDeflate: key.compress,
+		c := LeanConn{
+			Conn:                        &nc,
+			IsServer:                    key.isServer,
+			CompressionLevel:            key.compressionLevel,
+			NegotiatedPerMessageDeflate: key.compress,
 		}
 		err = c.WriteMessage(int(pm.messageType), pm.data[pm.offset:])
 		frame.data = nc.buf.Bytes()[:nc.buf.Len():nc.buf.Len()]
@@ -104,5 +97,4 @@ type prepareConn struct {
 	net.Conn
 }
 
-func (pc *prepareConn) Write(p []byte) (int, error)        { return pc.buf.Write(p) }
-func (pc *prepareConn) SetWriteDeadline(t time.Time) error { return nil }
+func (pc *prepareConn) Write(p []byte) (int, error) { return pc.buf.Write(p) }

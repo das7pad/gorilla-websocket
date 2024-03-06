@@ -95,9 +95,8 @@ func TestFraming(t *testing.T) {
 				wc := newTestConn(nil, &connBuf, isServer)
 				rc := newTestConn(chunker.f(&connBuf), nil, !isServer)
 				if compress {
-					wc.enableWriteCompression = true
-					wc.negotiatedPerMessageDeflate = true
-					rc.negotiatedPerMessageDeflate = true
+					wc.c.NegotiatedPerMessageDeflate = true
+					rc.c.NegotiatedPerMessageDeflate = true
 				}
 				for _, n := range frameSizes {
 					for _, writer := range writers {
@@ -277,11 +276,11 @@ func TestWriteBufferPool(t *testing.T) {
 		t.Fatalf("wc.NextWriter() returned %v", err)
 	}
 
-	if wc.writeBuf == nil {
-		t.Fatal("writeBuf is nil after NextWriter")
-	}
+	writeBufAddr := w.(*messageWriter).w.(*leanMessageWriter).writePoolData
 
-	writeBufAddr := &wc.writeBuf[0]
+	if writeBufAddr == nil {
+		t.Fatal("writePoolData is nil after NextWriter")
+	}
 
 	if _, err := io.WriteString(w, message); err != nil {
 		t.Fatalf("io.WriteString(w, message) returned %v", err)
@@ -291,11 +290,11 @@ func TestWriteBufferPool(t *testing.T) {
 		t.Fatalf("w.Close() returned %v", err)
 	}
 
-	if wc.writeBuf != nil {
+	if w.(*messageWriter).w.(*leanMessageWriter).writeBuf != nil {
 		t.Fatal("writeBuf not nil after w.Close()")
 	}
 
-	if wpd, ok := pool.v.(*writePoolData); !ok || len(wpd.buf) == 0 || &wpd.buf[0] != writeBufAddr {
+	if wpd, ok := pool.v.(*writePoolData); !ok || len(wpd.buf) == 0 || wpd != writeBufAddr {
 		t.Fatal("writeBuf not returned to pool")
 	}
 
@@ -314,11 +313,7 @@ func TestWriteBufferPool(t *testing.T) {
 		t.Fatalf("wc.WriteMessage() returned %v", err)
 	}
 
-	if wc.writeBuf != nil {
-		t.Fatal("writeBuf not nil after wc.WriteMessage()")
-	}
-
-	if wpd, ok := pool.v.(*writePoolData); !ok || len(wpd.buf) == 0 || &wpd.buf[0] != writeBufAddr {
+	if wpd, ok := pool.v.(*writePoolData); !ok || len(wpd.buf) == 0 || wpd != writeBufAddr {
 		t.Fatal("writeBuf not returned to pool after WriteMessage")
 	}
 
@@ -375,11 +370,11 @@ func TestWriteBufferPoolError(t *testing.T) {
 		t.Fatalf("wc.NextWriter() returned %v", err)
 	}
 
-	if wc.writeBuf == nil {
-		t.Fatal("writeBuf is nil after NextWriter")
-	}
+	writeBufAddr := w.(*messageWriter).w.(*leanMessageWriter).writePoolData
 
-	writeBufAddr := &wc.writeBuf[0]
+	if writeBufAddr == nil {
+		t.Fatal("writePoolData is nil after NextWriter")
+	}
 
 	if _, err := io.WriteString(w, "Hello"); err != nil {
 		t.Fatalf("io.WriteString(w, message) returned %v", err)
@@ -389,7 +384,11 @@ func TestWriteBufferPoolError(t *testing.T) {
 		t.Fatalf("w.Close() did not return error")
 	}
 
-	if wpd, ok := pool.v.(*writePoolData); !ok || len(wpd.buf) == 0 || &wpd.buf[0] != writeBufAddr {
+	if w.(*messageWriter).w.(*leanMessageWriter).writePoolData != nil {
+		t.Fatal("writeBuf not nil after w.Close()")
+	}
+
+	if wpd, ok := pool.v.(*writePoolData); !ok || len(wpd.buf) == 0 || wpd != writeBufAddr {
 		t.Fatal("writeBuf not returned to pool")
 	}
 
@@ -401,7 +400,7 @@ func TestWriteBufferPoolError(t *testing.T) {
 		t.Fatalf("wc.WriteMessage did not return error")
 	}
 
-	if wpd, ok := pool.v.(*writePoolData); !ok || len(wpd.buf) == 0 || &wpd.buf[0] != writeBufAddr {
+	if wpd, ok := pool.v.(*writePoolData); !ok || len(wpd.buf) == 0 || wpd != writeBufAddr {
 		t.Fatal("writeBuf not returned to pool")
 	}
 }

@@ -145,7 +145,7 @@ func TestBufioReuse(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if reuse := c.br == br; reuse != tt.reuse {
+		if reuse := c.c.BR == br; reuse != tt.reuse {
 			t.Errorf("%d: buffered reader reuse=%v, want %v", i, reuse, tt.reuse)
 		}
 		writeBuf := bufioWriterBuffer(c.NetConn(), bw)

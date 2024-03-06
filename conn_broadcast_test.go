@@ -60,8 +60,8 @@ func (b *broadcastBench) makeConns(numConns int) {
 	for i := 0; i < numConns; i++ {
 		c := newTestConn(nil, b.w, true)
 		if b.compression {
-			c.enableWriteCompression = true
-			c.negotiatedPerMessageDeflate = true
+			c.c.CompressionLevel = defaultCompressionLevel
+			c.c.NegotiatedPerMessageDeflate = true
 		}
 		conns[i] = newBroadcastConn(c)
 		go func(c *broadcastConn) {

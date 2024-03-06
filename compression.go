@@ -30,7 +30,7 @@ const flateReadTail =
 	// Add final block to squelch unexpected EOF error from flate reader.
 	"\x01\x00\x00\xff\xff"
 
-func decompressNoContextTakeover(r *messageReader) *flateReadWrapper {
+func decompressNoContextTakeover(r *leanMessageReader) *flateReadWrapper {
 	f := flateReadWrapper{
 		fr:              flateReaderPool.Get().(io.ReadCloser),
 		flateReadSource: flateReadSource{r: r, i: -1},
@@ -42,7 +42,7 @@ func decompressNoContextTakeover(r *messageReader) *flateReadWrapper {
 }
 
 type flateReadSource struct {
-	r *messageReader
+	r *leanMessageReader
 	i int
 }
 
@@ -86,7 +86,7 @@ func isValidCompressionLevel(level int) bool {
 	return minCompressionLevel <= level && level <= maxCompressionLevel
 }
 
-func compressNoContextTakeover(w io.WriteCloser, level int8) io.WriteCloser {
+func compressNoContextTakeover(w *leanMessageWriter, level int8) io.WriteCloser {
 	tw := &truncWriter{w: w}
 	fw, _ := flateWriterPools[level-minCompressionLevel].Get().(*flate.Writer)
 	if fw == nil {
@@ -100,7 +100,7 @@ func compressNoContextTakeover(w io.WriteCloser, level int8) io.WriteCloser {
 // truncWriter is an io.Writer that writes all but the last four bytes of the
 // stream to another io.Writer.
 type truncWriter struct {
-	w io.WriteCloser
+	w *leanMessageWriter
 	n int
 	p [4]byte
 }
@@ -184,6 +184,18 @@ type flateReadWrapper struct {
 	fr io.ReadCloser
 	flateReadSource
 	autoClosedOnEOF bool
+}
+
+func (r *flateReadWrapper) ReceiveControlMessages() []ControlMessage {
+	return r.r.controlMessages
+}
+
+func (r *flateReadWrapper) readControlMessagePayload() ([]byte, error) {
+	return r.r.readControlMessagePayload()
+}
+
+func (r *flateReadWrapper) getReadRemaining() int64 {
+	return r.r.getReadRemaining()
 }
 
 func (r *flateReadWrapper) Read(p []byte) (int, error) {
