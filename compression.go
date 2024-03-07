@@ -87,15 +87,14 @@ func isValidCompressionLevel(level int) bool {
 }
 
 func compressNoContextTakeover(w io.WriteCloser, level int8) io.WriteCloser {
-	p := &flateWriterPools[level-minCompressionLevel]
 	tw := &truncWriter{w: w}
-	fw, _ := p.Get().(*flate.Writer)
+	fw, _ := flateWriterPools[level-minCompressionLevel].Get().(*flate.Writer)
 	if fw == nil {
 		fw, _ = flate.NewWriter(tw, int(level))
 	} else {
 		fw.Reset(tw)
 	}
-	return &flateWriteWrapper{fw: fw, tw: tw, p: p}
+	return &flateWriteWrapper{fw: fw, tw: tw, level: level}
 }
 
 // truncWriter is an io.Writer that writes all but the last four bytes of the
@@ -152,9 +151,9 @@ func (w *truncWriter) Write(p []byte) (int, error) {
 }
 
 type flateWriteWrapper struct {
-	fw *flate.Writer
-	tw *truncWriter
-	p  *sync.Pool
+	fw    *flate.Writer
+	tw    *truncWriter
+	level int8
 }
 
 func (w *flateWriteWrapper) Write(p []byte) (int, error) {
@@ -169,7 +168,7 @@ func (w *flateWriteWrapper) Close() error {
 		return errWriteClosed
 	}
 	err1 := w.fw.Flush()
-	w.p.Put(w.fw)
+	flateWriterPools[w.level-minCompressionLevel].Put(w.fw)
 	w.fw = nil
 	if w.tw.p != [4]byte{0, 0, 0xff, 0xff} {
 		return errors.New("websocket: internal error, unexpected bytes at end of flate stream")
