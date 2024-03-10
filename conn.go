@@ -263,7 +263,7 @@ type BufferPool interface {
 // added to the pool.
 type writePoolData struct{ buf []byte }
 
-var bulkWriteBufferPool sync.Pool
+var bulkWriteBufferPool, controlWriteBufferPool sync.Pool
 
 // The Conn type represents a WebSocket connection.
 type Conn struct {
@@ -444,7 +444,12 @@ func (c *Conn) WriteControl(messageType int, data []byte, deadline time.Time) er
 		b1 |= maskBit
 	}
 
-	buf := make([]byte, 0, maxFrameHeaderSize+maxControlFramePayloadSize)
+	wpd, ok := controlWriteBufferPool.Get().(*writePoolData)
+	if !ok {
+		wpd = &writePoolData{buf: make([]byte, maxFrameHeaderSize+maxControlFramePayloadSize)}
+	}
+	defer controlWriteBufferPool.Put(wpd)
+	buf := wpd.buf[:0]
 	buf = append(buf, b0, b1)
 
 	if c.isServer {
