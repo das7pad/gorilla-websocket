@@ -13,6 +13,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 )
@@ -261,6 +262,8 @@ type BufferPool interface {
 // used to prevent applications from peeking at and depending on the values
 // added to the pool.
 type writePoolData struct{ buf []byte }
+
+var bulkWriteBufferPool sync.Pool
 
 // The Conn type represents a WebSocket connection.
 type Conn struct {
