@@ -271,6 +271,7 @@ type Conn struct {
 	// Write fields
 	mu            chan struct{} // used as mutex to protect writes to conn or writeBuf and returning of writeBuf to writePool
 	writeBuf      []byte        // frame is constructed in this buffer.
+	writePoolData *writePoolData
 	writePool     BufferPool
 	writeBufSize  int
 	writeDeadline time.Time
@@ -509,12 +510,12 @@ func (c *Conn) beginMessage(mw *messageWriter, messageType int) error {
 	mw.pos = maxFrameHeaderSize
 
 	if c.writeBuf == nil {
-		wpd, ok := c.writePool.Get().(writePoolData)
-		if ok {
-			c.writeBuf = wpd.buf
-		} else {
-			c.writeBuf = make([]byte, c.writeBufSize)
+		wpd, ok := c.writePool.Get().(*writePoolData)
+		if !ok {
+			wpd = &writePoolData{buf: make([]byte, c.writeBufSize)}
 		}
+		c.writePoolData = wpd
+		c.writeBuf = wpd.buf
 	}
 	return nil
 }
@@ -557,8 +558,9 @@ func (w *messageWriter) endMessage(err error) error {
 	}
 	c := w.c
 	w.err = err
-	if c.writePool != nil {
-		c.writePool.Put(writePoolData{buf: c.writeBuf})
+	if c.writePoolData != nil {
+		c.writePool.Put(c.writePoolData)
+		c.writePoolData = nil
 		c.writeBuf = nil
 	}
 	return err

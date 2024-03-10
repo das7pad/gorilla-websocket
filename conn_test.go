@@ -295,7 +295,7 @@ func TestWriteBufferPool(t *testing.T) {
 		t.Fatal("writeBuf not nil after w.Close()")
 	}
 
-	if wpd, ok := pool.v.(writePoolData); !ok || len(wpd.buf) == 0 || &wpd.buf[0] != writeBufAddr {
+	if wpd, ok := pool.v.(*writePoolData); !ok || len(wpd.buf) == 0 || &wpd.buf[0] != writeBufAddr {
 		t.Fatal("writeBuf not returned to pool")
 	}
 
@@ -318,7 +318,7 @@ func TestWriteBufferPool(t *testing.T) {
 		t.Fatal("writeBuf not nil after wc.WriteMessage()")
 	}
 
-	if wpd, ok := pool.v.(writePoolData); !ok || len(wpd.buf) == 0 || &wpd.buf[0] != writeBufAddr {
+	if wpd, ok := pool.v.(*writePoolData); !ok || len(wpd.buf) == 0 || &wpd.buf[0] != writeBufAddr {
 		t.Fatal("writeBuf not returned to pool after WriteMessage")
 	}
 
@@ -389,7 +389,7 @@ func TestWriteBufferPoolError(t *testing.T) {
 		t.Fatalf("w.Close() did not return error")
 	}
 
-	if wpd, ok := pool.v.(writePoolData); !ok || len(wpd.buf) == 0 || &wpd.buf[0] != writeBufAddr {
+	if wpd, ok := pool.v.(*writePoolData); !ok || len(wpd.buf) == 0 || &wpd.buf[0] != writeBufAddr {
 		t.Fatal("writeBuf not returned to pool")
 	}
 
@@ -401,7 +401,7 @@ func TestWriteBufferPoolError(t *testing.T) {
 		t.Fatalf("wc.WriteMessage did not return error")
 	}
 
-	if wpd, ok := pool.v.(writePoolData); !ok || len(wpd.buf) == 0 || &wpd.buf[0] != writeBufAddr {
+	if wpd, ok := pool.v.(*writePoolData); !ok || len(wpd.buf) == 0 || &wpd.buf[0] != writeBufAddr {
 		t.Fatal("writeBuf not returned to pool")
 	}
 }
